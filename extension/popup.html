@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>LWA: checking…</title>
+<style>
+  body { font: 13px -apple-system, sans-serif; margin: 14px; width: 280px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: #d8d8d8; flex: none; }
+  .dot.up { background: #2e9e44; }
+  .dot.down { background: #d64541; }
+  #line { flex: 1; }
+  #at, #hint { color: #777; font-size: 11px; margin-top: 6px; }
+  button { margin-top: 10px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="dot" id="dot"></div>
+    <div id="line">checking engine…</div>
+  </div>
+  <div id="at"></div>
+  <div id="hint"></div>
+  <button id="recheck">Check now</button>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzVVynPpjnzLGLNJLUJQ+eV49PRxbMZxJ1cvCRmR8S8R9zpsI7JpACH8L7v0cOUaYcjNLeGE1/7531+S56FSBtjdGatMfwopXJJx5qnqdCsrAzJtOQTTVBl8o88ZKyF4XMVoxtVAlK4ZsYr1Mq7ZURKvTB1u5oaTVH2RtIImrgbTq7YJlOwNjuOTSyNljD9G93H0zkORFad00Nr04JSmITTjyyhQKYG9HEy6/bvoXDxHxAAgytELyLFWwZbCuyClPB+YKg9JdfaSITp5PsI7iGJ+lwbhY0X7Ve94hV0sr/v/hT9I22+q/x4LaRV2983YOMttJ5nddr9SMPFVnXu54EQIDAQAB",
+  "manifest_version": 3,
+  "name": "Local Writing Assistant",
+  "version": "0.1.0",
+  "description": "Private, offline grammar checking. Your words never leave your machine.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:8081/*",
+    "http://127.0.0.1:8081/*",
+    "http://127.0.0.1:8082/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Local Writing Assistant"
+  }
+}
