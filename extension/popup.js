@@ -1,5 +1,5 @@
-// Popup: renders engine status. document.title doubles as the automated
-// battery's evidence channel (readable via the debug port's target list).
+// Popup: engine status + user dictionary.
+// document.title doubles as the battery's evidence channel (debug port list).
 //
 // Two check paths: the service worker (preferred), then — if the SW doesn't
 // answer, e.g. it was killed by Chrome's idle lifecycle — a direct fetch from
@@ -66,7 +66,90 @@ document.getElementById("recheck").onclick = () => {
   checkViaWorker();
 };
 
-chrome.storage.local.get("lastStatus", ({ lastStatus }) => {
-  if (lastStatus) render(lastStatus); // stale-until-fresh
-});
-checkViaWorker();
+// ---- dictionary (J9) -------------------------------------------------------
+function send(msg) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(msg, (r) => {
+        if (chrome.runtime.lastError) return resolve(null);
+        resolve(r);
+      });
+    } catch (_) { resolve(null); }
+  });
+}
+
+function renderDict(dict) {
+  const ul = document.getElementById("dictlist");
+  ul.textContent = "";
+  const words = Object.keys(dict || {}).sort();
+  words.forEach((w) => {
+    const li = document.createElement("li");
+    const span = document.createElement("span");
+    span.className = "w"; span.textContent = w;
+    const x = document.createElement("button");
+    x.className = "x"; x.textContent = "✕"; x.title = "remove";
+    x.onclick = async () => { const r = await send({ type: "dict-remove", word: w }); if (r && r.ok) renderDict(r.dict); };
+    li.appendChild(span); li.appendChild(x);
+    ul.appendChild(li);
+  });
+  if (!words.length) {
+    const li = document.createElement("li");
+    li.style.color = "#999";
+    li.textContent = "(empty)";
+    ul.appendChild(li);
+  }
+}
+
+async function addWord() {
+  const input = document.getElementById("dict-word");
+  const w = input.value;
+  if (!w.trim()) return;
+  const r = await send({ type: "dict-add", word: w });
+  if (r && r.ok) { input.value = ""; renderDict(r.dict); }
+}
+document.getElementById("dict-add").onclick = addWord;
+document.getElementById("dict-word").addEventListener("keydown", (e) => { if (e.key === "Enter") addWord(); });
+
+send({ type: "dict-get" }).then((r) => { if (r && r.ok) renderDict(r.dict); });
+
+// ---- battery driver (J9): drives the PRODUCTION dict+check paths -----------
+// Rig opens this page as a tab with ?battery=1. The probe sentence's rule
+// identity was verified against LT 6.6 on 2026-10-11: Sam/Xkalt/mistkae are
+// all TYPOS / MORFOLOGIK_RULE_EN_US.
+if (location.search.indexOf("battery=1") !== -1) {
+  const capture = (data) => fetch("http://127.0.0.1:8082/capture", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  }).catch(() => {});
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  (async () => {
+    const report = async (data) => { await capture(Object.assign({ kind: "dict-probe" }, data)); };
+    try {
+      const probeText = "Tell sam and Xkalt about the mistkae.";
+      // Mid-sentence lowercase 'sam' — LT does NOT flag sentence-initial
+      // capitalized words (could be a proper noun; verified against 6.6).
+      // Dict word stays capitalized "Sam": exercises the case-normalization
+      // contract (dict keys lowercased, context text lowercased before compare).
+      const probe = async () => {
+        // Production path: the SW's field-check (fetch + dict filter + evidence).
+        return send({ type: "field-check", field: "dict-probe", tag: "popup", text: probeText });
+      };
+
+      await sleep(800); // SW wake
+      const base = await probe();
+      await report({ phase: "baseline", engineMatches: base.engineMatches, shownMatches: base.matches.length });
+
+      await send({ type: "dict-add", word: "Sam" });
+      const withSam = await probe();
+      await report({ phase: "with-sam", engineMatches: withSam.engineMatches, shownMatches: withSam.matches.length });
+
+      await send({ type: "dict-remove", word: "Sam" });
+      const afterRemove = await probe();
+      await report({ phase: "after-remove", engineMatches: afterRemove.engineMatches, shownMatches: afterRemove.matches.length });
+    } catch (e) {
+      await report({ phase: "driverError", error: String(e && e.stack || e) });
+    }
+    await capture({ kind: "dict-done" });
+  })();
+}

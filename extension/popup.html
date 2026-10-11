@@ -4,14 +4,21 @@
 <meta charset="utf-8">
 <title>LWA: checking…</title>
 <style>
-  body { font: 13px -apple-system, sans-serif; margin: 14px; width: 280px; }
+  body { font: 13px -apple-system, sans-serif; margin: 14px; width: 300px; }
   .row { display: flex; align-items: center; gap: 8px; }
   .dot { width: 12px; height: 12px; border-radius: 50%; background: #d8d8d8; flex: none; }
   .dot.up { background: #2e9e44; }
   .dot.down { background: #d64541; }
   #line { flex: 1; }
   #at, #hint { color: #777; font-size: 11px; margin-top: 6px; }
-  button { margin-top: 10px; }
+  button { margin-top: 8px; }
+  hr { border: 0; border-top: 1px solid #ddd; margin: 12px 0; }
+  #dictlist { list-style: none; margin: 6px 0 0; padding: 0; max-height: 140px; overflow: auto; }
+  #dictlist li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+  #dictlist .w { flex: 1; }
+  #dictlist .x { cursor: pointer; color: #d64541; border: 0; background: none; padding: 0 4px; }
+  #dict-add-row { display: flex; gap: 6px; margin-top: 6px; }
+  #dict-add-row input { flex: 1; font: 13px -apple-system, sans-serif; }
 </style>
 </head>
 <body>
@@ -22,6 +29,15 @@
   <div id="at"></div>
   <div id="hint"></div>
   <button id="recheck">Check now</button>
+
+  <hr>
+  <b>Always accept (dictionary)</b>
+  <ul id="dictlist"></ul>
+  <div id="dict-add-row">
+    <input id="dict-word" placeholder="add a word…" autocomplete="off">
+    <button id="dict-add">Add</button>
+  </div>
+
   <script src="popup.js"></script>
 </body>
 </html>
