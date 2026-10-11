@@ -2,3 +2,14 @@
 .env
 *.log
 node_modules/
+
+# engine artifacts (reproducible via scripts/fetch-engine.sh)
+vendor/
+engine/
+# runtime state
+data/
+# reserved v1 dirs
+user-dict/
+custom-rules/
+# probe/battery workspace
+.scratch/

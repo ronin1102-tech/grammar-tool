@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "LWA MV3 Probe",
+  "version": "0.1.1",
+  "description": "Phase 0 probe: proves an MV3 service worker can fetch http://localhost:8081 with host_permissions on Chrome 128 / Catalina.",
+  "host_permissions": ["http://localhost:8081/*", "http://127.0.0.1:8081/*", "http://127.0.0.1:8082/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "probe.html", "default_title": "MV3 localhost probe" }
+}

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font: 13px -apple-system, sans-serif; margin: 12px; width: 300px; }
+  #result { margin-top: 8px; padding: 8px; border-radius: 6px; background: #f2f2f2; white-space: pre-wrap; }
+  .pass { background: #e6f6e6; } .fail { background: #fde8e8; }
+  button { margin-top: 8px; }
+</style>
+</head>
+<body>
+  <b>LWA MV3 Probe</b>
+  <div id="result">loading…</div>
+  <button id="rerun">Run probe now</button>
+  <script>
+    function render() {
+      chrome.storage.local.get("lastProbe", ({ lastProbe }) => {
+        const el = document.getElementById("result");
+        if (!lastProbe) { el.textContent = "No probe run yet."; return; }
+        el.className = lastProbe.ok ? "pass" : "fail";
+        el.textContent = (lastProbe.ok ? "PASS" : "FAIL") +
+          "\ntrigger: " + lastProbe.reason +
+          (lastProbe.ok ? "\nHTTP " + lastProbe.status + ", matches: " + lastProbe.matches : "\nerror: " + lastProbe.error) +
+          "\nround-trip: " + lastProbe.ms + " ms\nat: " + lastProbe.at;
+      });
+    }
+    document.getElementById("rerun").onclick = () =>
+      chrome.runtime.sendMessage({ type: "run-probe", note: "manual" }, render);
+    render();
+  </script>
+</body>
+</html>
