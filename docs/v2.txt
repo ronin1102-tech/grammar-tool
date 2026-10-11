@@ -1,0 +1,9 @@
+# v2 parking lot — grammar-tool
+# Items parked out of v1. Each line: item · origin · status.
+
+- True menubar item (NSStatusItem, Swift) — v1 spec §3.2 deviation — parked 2026-10-10 (measured Swift compile cost).
+- Google Docs surface — v1 J10 spike → DEFERRED to v1.1 by Tracy, 2026-10-12. Dossier + probe kit: docs/extension-docs-spike.md. Re-entry: run probes P1–P3, all green = battery-first module build.
+- llama.cpp rewrite layer — Phase 2 per plan — parked 2026-10-10.
+- Native system-wide client (CGEventTap/Accessibility) — v2/v3 per decision D2 — parked 2026-10-10.
+- Name finalization — Phase 3 polish (D1) — open; never blocks a build.
+- Public distribution (public GitHub + Release ZIPs) — D4; nothing public without Tracy's explicit approval — parked 2026-10-10.

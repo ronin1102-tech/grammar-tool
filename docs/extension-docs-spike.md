@@ -1,6 +1,8 @@
 # J10 — Google Docs canvas spike: ship-or-defer (decision dossier)
 
-**Round type:** decision, not feature build. Half-session, per HANDOFF-2026-10-11 queue
+**DECIDED (Tracy, 2026-10-12): DEFER Google Docs to v1.1.** Recorded in `docs/v2.txt`
+(parking lot). The probe kit (§4) is the re-entry path if v1.1 picks this up.
+  **Round type:** decision, not feature build. Half-session, per HANDOFF-2026-10-11 queue
 item 1. Deferral to v1.1 is the stated fallback in the v1 spec (§3.3: "highest-risk v1
 item; if it proves unstable, Docs ships as v1.1") and is an acceptable outcome.
 
