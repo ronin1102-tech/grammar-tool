@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>LWA gmail fixture</title></head>
+<body style="font:14px sans-serif">
+  <h1>LWA gmail fixture</h1>
+  <p>Compose dialog stands in for Gmail's surface (fixed-position, role=dialog, labelled textbox).</p>
+  <input id="pw" type="password" placeholder="password (privacy regression)">
+  <div role="dialog" aria-label="New Message"
+       style="position:fixed;right:40px;bottom:40px;width:560px;background:#fff;border:1px solid #bbb;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:1000;padding:10px;">
+    <input type="text" aria-label="To" placeholder="Recipients" style="width:100%;margin-bottom:6px;">
+    <div id="gmail-body" role="textbox" aria-label="Message Body" contenteditable="true" tabindex="0"
+         style="min-height:120px;border:1px solid #eee;padding:8px;font:14px/1.6 sans-serif;"></div>
+  </div>
+  <script>
+    // Battery driver v3: types a two-paragraph body, waits for the overlay via
+    // the dataset bridge, clicks matches[0], verifies auto re-check, then runs
+    // the UNDO PROOF (does the correction sit on the page's native undo stack?)
+    // and finally removes the dialog (lifecycle: overlay must clear).
+    if (location.search.indexOf("battery=1") !== -1) {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      (async () => {
+        try {
+          await Promise.race([
+            new Promise((res) => document.addEventListener("lwaReady", res, { once: true })),
+            sleep(10000)
+          ]);
+          const body = document.getElementById("gmail-body");
+          body.focus();
+          body.innerHTML = "<p>Their was a obvious mistake in the report.</p><p>Please review it and sent me you're feedback.</p>";
+          body.dispatchEvent(new Event("input", { bubbles: true }));
+
+          // wait for overlay evidence on the bridge (poll, don't guess timing)
+          let rects = [];
+          for (let i = 0; i < 40; i++) {
+            rects = JSON.parse(body.dataset.lwaRects || "[]");
+            if (rects.length) break;
+            await sleep(250);
+          }
+          const bodyRect = body.getBoundingClientRect();
+          const before = body.textContent;
+
+          // click matches[0] (rect format: [x, y, w, h, matchIndex])
+          let afterApply = null, clicked = false;
+          if (rects.length) {
+            const r = rects[0];
+            body.dispatchEvent(new MouseEvent("click", {
+              bubbles: true, cancelable: true, view: window,
+              clientX: r[0] + r[2] / 2, clientY: r[1] + r[3] / 2
+            }));
+            clicked = true;
+            await sleep(1600); // let apply -> input -> 700ms debounce -> engine -> re-check land BEFORE undoing
+            afterApply = body.textContent;
+          }
+
+          // UNDO PROOF: the correction must sit on the page's native undo stack.
+          body.focus();
+          let afterUndo = null;
+          try {
+            document.execCommand("undo", false, null);
+          } catch (e) {}
+          await sleep(400);
+          afterUndo = body.textContent;
+          const undoRestores = (afterUndo === before);
+
+          // LIFECYCLE: close the compose dialog -> overlay must clear.
+          const dlg = document.querySelector('[role="dialog"]');
+          const rectsBeforeClose = body.dataset.lwaRects || "[]";
+          if (dlg) dlg.remove();
+          await sleep(400);
+          const clearedAfterClose = (body.dataset.lwaRects === undefined);
+
+          // privacy regression, typed last
+          const pw = document.getElementById("pw");
+          pw.focus(); pw.value = "hunter2-gmail";
+          pw.dispatchEvent(new Event("input", { bubbles: true }));
+          await sleep(1000);
+
+          await fetch("/driver-report", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              rectsCount: rects.length,
+              bodyRect: [Math.round(bodyRect.x), Math.round(bodyRect.y), Math.round(bodyRect.width), Math.round(bodyRect.height)],
+              clicked: clicked,
+              before: before,
+              afterApply: afterApply,
+              afterUndo: afterUndo,
+              undoRestores: undoRestores,
+              rectsBeforeClose: rectsBeforeClose.length,
+              clearedAfterClose: clearedAfterClose
+            })
+          }).catch(function () {});
+        } catch (err) {
+          await fetch("/driver-report", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ driverError: String(err && err.stack || err) })
+          }).catch(function () {});
+        }
+        await fetch("/battery-done").catch(function () {});
+      })();
+    }
+  </script>
+</body>
+</html>

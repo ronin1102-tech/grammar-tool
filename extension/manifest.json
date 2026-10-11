@@ -18,7 +18,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["overlay.js", "content.js"],
+      "js": ["overlay.js", "content.js", "gmail.js"],
       "run_at": "document_idle"
     }
   ],

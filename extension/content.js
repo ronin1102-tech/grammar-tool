@@ -40,6 +40,12 @@
   }
 
   function fieldId(el) {
+    try {
+      if (window.__LWA_FIELD_ID) {
+        const provided = window.__LWA_FIELD_ID(el); // surface modules first (J8)
+        if (provided) return provided;
+      }
+    } catch (_) {}
     if (el.id) return el.id;
     if (el.name) return el.name;
     const same = document.querySelectorAll(el.tagName);
