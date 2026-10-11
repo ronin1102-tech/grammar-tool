@@ -5,8 +5,10 @@ node_modules/
 
 # engine artifacts (reproducible via scripts/fetch-engine.sh)
 vendor/
-engine/
+engine/*
+!engine/server.properties
 # runtime state
+LWA.app/
 data/
 # reserved v1 dirs
 user-dict/
