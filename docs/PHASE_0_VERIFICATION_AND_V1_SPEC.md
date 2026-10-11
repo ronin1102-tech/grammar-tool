@@ -222,7 +222,7 @@ One user, one machine, one engine. No cloud, no account, no telemetry — verifi
 
 ## 3.4 Engine harness
 
-- **Launch config `engine/server.properties`** (all flags verified present in `--help`): `maxTextLength=10000`, `maxCheckTimeMillis=10000`, `maxCheckThreads=2` (leave cores to Chrome), `cacheSize=500`, `cacheTTLSeconds=300`.
+- **Launch config `engine/server.properties`** (all flags verified present in `--help`): `maxTextLength=10000`, `maxCheckTimeMillis=30000`, `maxCheckThreads=2` (leave cores to Chrome), `cacheSize=500`, `cacheTTLSeconds=300`.
 - **API contract (both endpoints exercised this session):** `POST /v2/check` form-urlencoded `text`, `language=en-US` → JSON `matches[]` with `message`, `offset`, `length`, `replacements[].value`, `rule.id`, `rule.category.id`. Health: `GET /v2/languages` → 200.
 - **Disk layout:**
 

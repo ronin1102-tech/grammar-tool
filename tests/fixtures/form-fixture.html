@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>LWA forms fixture</title></head>
+<body>
+  <h1>LWA forms fixture</h1>
+  <form onsubmit="return false">
+    <input id="pw" type="password" value="" placeholder="password">
+    <input id="cc" type="text" autocomplete="cc-number" value="" placeholder="card number">
+    <textarea id="public" rows="4" cols="60">Their was a obvious mistake in the report.</textarea>
+    <div id="rich" contenteditable="true" style="border:1px solid #999;min-height:40px;">This is a exmaple of rich text.</div>
+    <textarea id="huge" rows="3" cols="60"></textarea>
+  </form>
+  <script>
+    // Battery driver: only runs with ?battery=1. Types into each field with
+    // realistic focus+input events, then tells the fixture server we're done.
+    if (location.search.indexOf("battery=1") !== -1) {
+      const setVal = (el, v) => { el.focus(); el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      (async () => {
+        await setVal(document.getElementById("pw"), "hunter2"); await sleep(1000);   // T1: must NEVER be captured
+        await setVal(document.getElementById("cc"), "4111 1111 1111 1111"); await sleep(1000); // T2: never
+        setVal(document.getElementById("public"), "Their was a obvious mistake in the report."); await sleep(1300); // T3
+        // T5: keystroke burst — 5 inputs 120ms apart, debounce must collapse
+        const pub = document.getElementById("public");
+        for (let i = 1; i <= 5; i++) {
+          setVal(pub, "Their was a obvious mistake in the report, part " + i + ".");
+          await sleep(120);
+        }
+        await sleep(1300);
+        const rich = document.getElementById("rich");
+        rich.focus(); rich.textContent = "This is a exmaple of rich text, edited.";
+        rich.dispatchEvent(new Event("input", { bubbles: true })); await sleep(1300); // T4
+        setVal(document.getElementById("huge"), "word ".repeat(2400)); await sleep(1500); // T6 (12000 chars)
+        await fetch("/battery-done").catch(() => {});
+      })();
+    }
+  </script>
+</body>
+</html>
