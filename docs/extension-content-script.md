@@ -12,7 +12,7 @@ All engine traffic goes through the service worker (`chrome.runtime.sendMessage`
 ## Contract
 
 **content.js** (injected `<all_urls>`, `document_idle`, top frames):
-- Tracks the active editable via `focusin`; acts only on the tracked element's `input` events.
+- Tracks editables by their `input` events (target-driven — no focus tracking to miss). Per-field debounce timers: one field's pending re-check is never cancelled by typing in another (J7 battery finding). No-op guard: unchanged text is never re-sent.
 - **Checkable allowlist** (everything else is invisible to the pipeline):
   `textarea`, `input[type=text|search|url]`, `contenteditable` blocks.
 - **Secret guards — never read, never sent:** `input[type=password]`,

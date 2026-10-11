@@ -88,4 +88,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     checkField(msg).then(sendResponse);
     return true;
   }
+  if (msg && msg.type === "battery-evidence") {
+    fetch("http://127.0.0.1:8082/capture", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(msg.data)
+    }).then(() => sendResponse({ ok: true })).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
 });
