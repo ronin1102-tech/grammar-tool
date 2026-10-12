@@ -14,7 +14,11 @@ lifecycle, and proof — not a new pipeline.
   Evidence field ids therefore carry the surface — captures are self-describing.
 - Compose-dialog lifecycle: a MutationObserver watches for dialog removal and calls
   `__LWA_OVERLAY.clearFor(textbox)` — closing a compose window can never leave stale
-  underlines floating over the page.
+  underlines floating over the page. **Minimize** keeps the dialog in the DOM, so removal
+  never fires; overlay.js handles it generically (hidden field → bars and bridge drop,
+  restored field → bars return; J12 S2-3).
+- Two open composes: the 2nd+ dialog's id gets an index suffix
+  (`gmail-compose:message-body-2`) so evidence stays distinguishable (J12 S3-6).
 - No new network paths. Overlay layer z-index (2147483646) already exceeds Gmail dialogs'.
 
 **content.js** (one-line change): `fieldId()` tries `__LWA_FIELD_ID` first, then generic
@@ -36,6 +40,8 @@ Fixture mimics the compose dialog (fixed-position `[role=dialog]`, `role=textbox
 | G4 | **undo proof** (J7's honest-untested item): `execCommand("undo")` restores the original wording — the correction sits on the page's native undo stack | driver report `undoRestores: true`, before/after text in report |
 | G5 | field id carries the Gmail label | captures contain `gmail-compose:` prefix |
 | G6 | compose dialog removed → overlay bridge cleared (lifecycle) | driver reads `data-lwa-rects` undefined after dialog removal |
+| G7 | compose dialog **minimized** (`display:none`, still in DOM, no scroll event) → overlay cleared (J12 S2-3) | driver reads `data-lwa-rects` undefined 400 ms after hiding |
+| G8 | dialog restored → underlines return without typing | driver's bridge rect count after restore equals count before minimize |
 
 Privacy re-assert rides along (password value never in captures) — same as every round.
 
@@ -55,6 +61,7 @@ fields only — G4 proves it where claimed).
 3. Open Gmail, click Compose, type: `Their was a obvious mistake and sent it yesterday.`
 4. Expect underlines within ~1s of pausing. Click one → correction applies; `Cmd+Z` reverts
    it (the live-surface undo check).
-5. Close the compose window → underlines vanish with it.
+5. Minimize the compose window → underlines vanish; restore it → they come back.
+   Close the compose window → underlines vanish with it.
 6. Report feel: underline lag, click precision, anything visually off. Any miss = new bug
    report, not a spec failure — the fixture mirrors documented DOM shape, not live markup.
