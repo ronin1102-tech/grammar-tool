@@ -1,7 +1,7 @@
 # HANDOFF — J12 target-machine battery re-run (for Cori)
 
 **From:** Claude (fix lane) · **To:** Cori (build/QA, evidence) · **Then:** Vesper close-out → Tracy accepts
-**Date:** 2026-10-12 · **Branch:** `claude/new-session-y95j8q` (2 commits on top of `04b6de1`: `f5adb04` code + batteries, `b2ca99d` docs)
+**Date:** 2026-10-12 · **Branch:** `claude/new-session-y95j8q`, commits on top of `04b6de1`: `f5adb04` code + batteries (the only code commit), then docs-only commits (`b2ca99d`, this handoff)
 
 **Read this first.** It replaces the conversation history. If you need detail on any
 finding, it's in `docs/QA-J12-FIXES.md`. Don't re-derive anything else.
@@ -20,7 +20,9 @@ code fixes, no pushes to main, no merge.**
 ```sh
 cd ~/workspace/grammar-tool
 git fetch origin claude/new-session-y95j8q
-git checkout claude/new-session-y95j8q        # expect HEAD b2ca99d
+git checkout claude/new-session-y95j8q
+git pull origin claude/new-session-y95j8q
+git diff --stat f5adb04 HEAD -- extension scripts tests   # expect empty: code = f5adb04
 ```
 
 Preconditions (all were already true on this machine after J11; confirm, don't redo):
@@ -101,7 +103,7 @@ re-runs used: <none | battery + reason>
 attachments: /tmp/j12/*.txt (+ *-fail/ dirs)
 ```
 
-All green → Vesper does the close-out pass on `b2ca99d` (start at `docs/QA-J12-FIXES.md`).
+All green → Vesper does the close-out pass on the branch head (start at `docs/QA-J12-FIXES.md`).
 Any red → back to Claude with the failing line + its `-fail/` capture files.
 
 ## Still open, not yours
