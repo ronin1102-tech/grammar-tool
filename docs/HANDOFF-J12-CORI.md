@@ -17,13 +17,18 @@ code fixes, no pushes to main, no merge.**
 
 ## Setup (once)
 
+**No GitHub access needed.** Tracy has already fetched and checked out the branch in the
+local repo. Everything below is local git only, so don't fetch or pull.
+
 ```sh
 cd ~/workspace/grammar-tool
-git fetch origin claude/new-session-y95j8q
-git checkout claude/new-session-y95j8q
-git pull origin claude/new-session-y95j8q
-git diff --stat f5adb04 HEAD -- extension scripts tests   # expect empty: code = f5adb04
+git branch --show-current                                  # expect: claude/new-session-y95j8q
+git log --oneline -1                                       # expect subject: J12 Cori handoff: local-only setup
+git diff --stat f5adb04 HEAD -- extension scripts tests    # expect empty: code = f5adb04
 ```
+
+If any check doesn't match, **stop and ask Tracy** to redo the checkout. Don't fix it
+yourself.
 
 Preconditions (all were already true on this machine after J11; confirm, don't redo):
 - `engine/LanguageTool-6.6/` present (else `sh scripts/fetch-engine.sh`)
