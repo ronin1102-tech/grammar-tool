@@ -100,6 +100,7 @@ queues — typing while the engine is off is just unchecked.
 - **"Port 8081 is already in use by pid NNN (not ours)."** — quit that process, or set
   `LWA_PORT` for the launcher. Note the extension is pinned to 8081 by its manifest
   allowlist, so moving the port means editing `extension/manifest.json` too.
+- **"Engine not found — run scripts/fetch-engine.sh first." in a copy that should have the engine** — two clones of this repo on one machine: LWA.app is bound to whichever clone built it, and all clones share port 8081. Keep one clone, or re-run `sh scripts/make-app.sh` in the clone you want.
 - **"Engine did not become ready in 240s."** — look at the last lines of
   `data/engine.log`; the launcher dialog names that file too.
 - **Popup shows "Engine down."** — the engine isn't running. Start LWA.app, then hit
