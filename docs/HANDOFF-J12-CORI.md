@@ -45,7 +45,7 @@ sh scripts/forms-battery.sh    2>&1 | tee /tmp/j12/forms.txt
 sh scripts/overlay-battery.sh  2>&1 | tee /tmp/j12/overlay.txt
 sh scripts/gmail-battery.sh    2>&1 | tee /tmp/j12/gmail.txt
 sh scripts/dict-battery.sh     2>&1 | tee /tmp/j12/dict.txt
-# after any FAIL:  cp /tmp/lwa-capture.jsonl /tmp/lwa-driver-report.json /tmp/j12/<name>-fail/
+# after any FAIL:  mkdir -p /tmp/j12/<name>-fail && cp /tmp/lwa-capture.jsonl /tmp/lwa-driver-report.json /tmp/j12/<name>-fail/
 ```
 
 ## Expected (green = these exact lines)
