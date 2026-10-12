@@ -1,6 +1,6 @@
 #!/bin/sh
-# overlay-battery.sh — J7 battery: underlines + one-click apply, O1–O5 per
-# docs/extension-overlay.md. Same rig discipline as forms-battery.sh:
+# overlay-battery.sh — J7 battery: underlines + one-click apply, O1–O7 per
+# docs/extension-overlay.md (O6/O7 = J12 S2-2, per-field overlay state). Same rig discipline as forms-battery.sh:
 # capture channel smoke-tested first, fresh profile, Chrome killed by PID,
 # sentinel-then-evidence wait (a click that lands means nothing if the
 # re-check evidence hasn't landed yet).
@@ -132,6 +132,25 @@ check("O4 contenteditable apply", ra.startswith("This is an ") and ra != "This i
 
 # O5: privacy regression — password value appears nowhere
 check("O5 password still never captured", "hunter2-secret" not in raw)
+
+if rep.get("driverError"):
+    check("driver ran", False, rep["driverError"][:300])
+
+# O6 (J12 S2-2): checking rich did not wipe public — bars DRAWN over both
+# fields at once (driver counts layer bars, not the bridge, which can go stale)
+both = rep.get("bothLive") or {}
+pub_bridge = len(json.loads(rep.get("pubBeforeRichApply") or "[]"))
+check("O6 two fields underlined simultaneously",
+      both.get("public", 0) >= 1 and both.get("rich", 0) >= 1 and both.get("public") == pub_bridge,
+      "bars=%s public bridge=%s" % (both, pub_bridge))
+
+# O7 (J12 S2-2): apply in rich left public's underlines intact (bars + bridge)
+check("O7 apply in one field leaves the other's underlines intact",
+      rep.get("pubBeforeRichApply", "[]") != "[]" and
+      rep.get("pubAfterRichApply") == rep.get("pubBeforeRichApply") and
+      both.get("public", 0) >= 1 and rep.get("pubBarsAfterRichApply") == both.get("public"),
+      "bridge before=%s after=%s bars before=%s after=%s" % (rep.get("pubBeforeRichApply"), rep.get("pubAfterRichApply"),
+                                                             both.get("public"), rep.get("pubBarsAfterRichApply")))
 
 print("---")
 print("kinds:", {k: sum(1 for c in caps if c.get("kind") == k) for k in set(c.get("kind") for c in caps)})

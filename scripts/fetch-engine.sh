@@ -29,6 +29,7 @@ fetch_verify() { # $1=url $2=dest $3=sha
 
 command -v curl >/dev/null || { echo "FAIL: curl required"; exit 1; }
 command -v unzip >/dev/null || { echo "FAIL: unzip required"; exit 1; }
+command -v python3 >/dev/null || { echo "FAIL: python3 required (smoke-test JSON parsing)"; exit 1; }
 if lsof -nP -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
   echo "FAIL: port $PORT already in use: $(lsof -ti tcp:$PORT -sTCP:LISTEN)"; exit 1
 fi
@@ -55,11 +56,12 @@ JDKHOME="$HOME/jdks/$JDK_VERSION/Contents/Home"
 # 4. Catalina patch (idempotent)
 sh "$ROOT/scripts/patch-jdk.sh" "$JDKHOME"
 
-# 5. Smoke test: boot the server, run one real check, tear down.
+# 5. Smoke test: boot the server with the PRODUCTION flags (same --config the
+# launcher passes), run one real check, tear down.
 LOG=/tmp/lwa-fetch-smoke.log
 "$JDKHOME/bin/java" -Djava.awt.headless=true -Xms256m -Xmx1g \
   -cp "$ROOT/engine/LanguageTool-${LT_VERSION}/languagetool-server.jar" \
-  org.languagetool.server.HTTPServer --port $PORT >>"$LOG" 2>&1 &
+  org.languagetool.server.HTTPServer --config "$ROOT/engine/server.properties" --port $PORT >>"$LOG" 2>&1 &
 PID=$!
 # If anything kills this script while the smoke server is booting, take the
 # server down with it — never leave an orphaned listener on the port.

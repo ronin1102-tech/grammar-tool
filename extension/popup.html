@@ -19,6 +19,8 @@
   #dictlist .x { cursor: pointer; color: #d64541; border: 0; background: none; padding: 0 4px; }
   #dict-add-row { display: flex; gap: 6px; margin-top: 6px; }
   #dict-add-row input { flex: 1; font: 13px -apple-system, sans-serif; }
+  #dict-note, #dict-err { color: #777; font-size: 11px; margin-top: 6px; }
+  #dict-err { color: #d64541; }
 </style>
 </head>
 <body>
@@ -37,6 +39,8 @@
     <input id="dict-word" placeholder="add a word…" autocomplete="off">
     <button id="dict-add">Add</button>
   </div>
+  <div id="dict-err"></div>
+  <div id="dict-note">Hides spelling flags only — a grammar flag on the same word still shows.</div>
 
   <script src="popup.js"></script>
 </body>

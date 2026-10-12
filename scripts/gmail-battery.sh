@@ -1,5 +1,5 @@
 #!/bin/sh
-# gmail-battery.sh — J8 battery: Gmail-class compose surface, G1–G5 per
+# gmail-battery.sh — J8 battery: Gmail-class compose surface, G1–G8 per
 # docs/extension-gmail.md. Rig discipline unchanged: capture smoke first,
 # fresh profile, Chrome killed by PID, sentinel-then-evidence wait.
 set -u
@@ -133,6 +133,16 @@ check("G4 undo restores original (correction on native undo stack)",
 # G6 (lifecycle): dialog removed -> bridge cleared
 check("G6 dialog close clears overlay", rep.get("clearedAfterClose") is True,
       "rectsBeforeClose=%s" % rep.get("rectsBeforeClose"))
+
+# G7 (J12 S2-3): minimize (dialog hidden, still in DOM, no scroll) clears
+check("G7 dialog minimize clears overlay without a scroll event",
+      rep.get("rectsBeforeMinimize", 0) >= 1 and rep.get("clearedAfterMinimize") is True,
+      "rectsBeforeMinimize=%s clearedAfterMinimize=%s" % (rep.get("rectsBeforeMinimize"), rep.get("clearedAfterMinimize")))
+
+# G8: restoring the dialog brings the (unchanged field's) underlines back
+check("G8 dialog restore re-renders underlines",
+      rep.get("rectsAfterRestore") == rep.get("rectsBeforeMinimize") and rep.get("rectsAfterRestore", 0) >= 1,
+      "before=%s afterRestore=%s" % (rep.get("rectsBeforeMinimize"), rep.get("rectsAfterRestore")))
 
 # privacy re-assert
 check("privacy: password never captured", "hunter2-gmail" not in raw)

@@ -9,10 +9,71 @@
     <textarea id="public" rows="4" cols="60"></textarea>
     <div id="rich" contenteditable="true" style="border:1px solid #999;min-height:40px;"></div>
     <textarea id="huge" rows="3" cols="60"></textarea>
+    <textarea id="retype" rows="2" cols="60"></textarea>
+    <textarea id="cctext" rows="1" cols="30" autocomplete="cc-number"></textarea>
   </form>
   <script>
-    // Battery driver v2: types into fields, CLICKS the first underline rect
-    // (from the DOM bridge), reports what it saw to the fixture server.
+    // Forms driver (J6, restored J12 — J7's rewrite had dropped it, leaving
+    // forms-battery's T5/T6 with nothing to observe): ?battery=forms.
+    // Secret fields, a 5-keystroke burst, the 12k cap, then the J12 S2-1
+    // delete-all + retype-identical check.
+    if (location.search.indexOf("battery=forms") !== -1) {
+      const setVal = (el, v) => { el.focus(); el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      (async () => {
+        try {
+          await Promise.race([
+            new Promise((res) => document.addEventListener("lwaReady", res, { once: true })),
+            sleep(10000)
+          ]);
+          setVal(document.getElementById("pw"), "hunter2"); await sleep(1000);              // T1: never captured
+          setVal(document.getElementById("cc"), "4111 1111 1111 1111"); await sleep(1000);  // T2: never
+          setVal(document.getElementById("cctext"), "4242 4242 4242 4242"); await sleep(1000); // T8: cc-* on a textarea, never
+          const pub = document.getElementById("public");
+          setVal(pub, "Their was a obvious mistake in the report."); await sleep(1300);     // T3
+          for (let i = 1; i <= 5; i++) {                                                    // T5: burst
+            setVal(pub, "Their was a obvious mistake in the report, part " + i + ".");
+            await sleep(120);
+          }
+          await sleep(1300);
+          const rich = document.getElementById("rich");
+          rich.focus(); rich.textContent = "This is a exmaple of rich text, edited.";
+          rich.dispatchEvent(new Event("input", { bubbles: true })); await sleep(1300);   // T4
+          setVal(document.getElementById("huge"), "word ".repeat(2400)); await sleep(2500); // T6 (12000 chars)
+
+          // T7 (J12 S2-1): type errorful text, delete all, retype the identical
+          // text -> a second check must fire and underlines must render again.
+          const rt = document.getElementById("retype");
+          const RT = "Retype check: their was a obvious mistake.";
+          setVal(rt, RT); await sleep(2000);
+          const rectsFirst = JSON.parse(rt.dataset.lwaRects || "[]").length;
+          setVal(rt, ""); await sleep(1300);
+          const rectsCleared = JSON.parse(rt.dataset.lwaRects || "[]").length;
+          setVal(rt, RT);
+          let rectsRetyped = 0;
+          for (let i = 0; i < 16; i++) {
+            await sleep(250);
+            rectsRetyped = JSON.parse(rt.dataset.lwaRects || "[]").length;
+            if (rectsRetyped) break;
+          }
+          await fetch("/driver-report", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ retypeText: RT, rectsFirst: rectsFirst, rectsCleared: rectsCleared, rectsRetyped: rectsRetyped })
+          }).catch(function () {});
+        } catch (err) {
+          await fetch("/driver-report", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ driverError: String(err && err.stack || err) })
+          }).catch(function () {});
+        }
+        await fetch("/battery-done").catch(function () {});
+      })();
+    }
+
+    // Battery driver v3 (overlay): types into fields, CLICKS the first
+    // underline rect (from the DOM bridge), reports what it saw to the fixture
+    // server. v3 (J12 S2-2): both fields' underlines must coexist, and an
+    // apply in one field must leave the other's untouched.
     if (location.search.indexOf("battery=1") !== -1) {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const setVal = (el, v) => { el.focus(); el.value = v; el.dispatchEvent(new Event("input", { bubbles: true })); };
@@ -26,6 +87,20 @@
         });
         el.dispatchEvent(ev);
         return rects;
+      };
+      // Bars actually DRAWN over a field (leaf divs of the overlay layer whose
+      // box intersects the field). The bridge alone can't prove a field still
+      // shows underlines: a stale data-lwa-rects can outlive its bars.
+      const barsOver = (el) => {
+        const f = el.getBoundingClientRect();
+        return Array.prototype.filter.call(
+          document.querySelectorAll("#lwa-overlay-layer div"),
+          (d) => {
+            if (d.children.length) return false;
+            const b = d.getBoundingClientRect();
+            return b.width > 0 && b.right > f.left - 6 && b.left < f.right + 6 &&
+                   b.bottom > f.top - 6 && b.top < f.bottom + 40;
+          }).length;
       };
       (async () => {
         try {
@@ -51,9 +126,16 @@
         rich.dispatchEvent(new Event("input", { bubbles: true }));
         await sleep(2500);
         const richRects = rich.dataset.lwaRects || "[]";
+        // O6: public's post-apply re-check has landed by now; both fields
+        // must be underlined at the same time.
+        const pubBeforeRichApply = pub.dataset.lwaRects || "[]";
+        const bothLive = { public: barsOver(pub), rich: barsOver(rich) };
         const rects2 = clickRect0(rich);
         await sleep(300);
         const richAfter = rich.textContent;
+        // O7: applying in rich must not disturb public's underlines.
+        const pubAfterRichApply = pub.dataset.lwaRects || "[]";
+        const pubBarsAfterRichApply = barsOver(pub);
 
         // privacy regression: password typed AFTER public flows
         const pw = document.getElementById("pw");
@@ -68,7 +150,10 @@
             richRects: JSON.parse(richRects).length,
             clicked: [!!rects, !!rects2],
             publicFieldRect: [Math.round(fieldRect.x), Math.round(fieldRect.y), Math.round(fieldRect.width), Math.round(fieldRect.height)],
-            publicAfter: publicAfter, richAfter: richAfter
+            publicAfter: publicAfter, richAfter: richAfter,
+            bothLive: bothLive,
+            pubBeforeRichApply: pubBeforeRichApply, pubAfterRichApply: pubAfterRichApply,
+            pubBarsAfterRichApply: pubBarsAfterRichApply
           })
         }).catch(function () {});
         } catch (err) {

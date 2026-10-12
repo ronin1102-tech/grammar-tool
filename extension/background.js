@@ -4,7 +4,10 @@
 
 const ENGINE = "http://localhost:8081";
 const MAX_CHARS = 10000;
-let fieldAbort = null;
+// In-flight checks keyed per field (tab:frame:field): a new check aborts only
+// the same field's older request — cross-field typing (or a dictionary-change
+// re-check of several fields) never drops another field's check (QA J12 S3-2).
+const fieldAborts = new Map();
 
 // ---- user dictionary (J9) ------------------------------------------------
 // Words the user always accepts. Filter is CATEGORY-AWARE: a dictionary word
@@ -35,18 +38,34 @@ function filterMatches(matches, dict) {
   });
 }
 
-// ---- field checks (J6): latest-wins abort --------------------------------
-async function checkField(msg) {
+// Tell every tab's content script the dictionary changed, so live overlays
+// re-check now instead of on the next keystroke (QA J12 S2-4). No "tabs"
+// permission needed: we only use tab ids. Tabs without our content script
+// (chrome://, store pages) just reject — ignored.
+function notifyDictChanged() {
+  chrome.tabs.query({}).then((tabs) => {
+    tabs.forEach((t) => {
+      chrome.tabs.sendMessage(t.id, { type: "dict-changed" }).catch(() => {});
+    });
+  }).catch(() => {});
+}
+
+// ---- field checks (J6): latest-wins abort, per field -----------------------
+async function checkField(msg, sender) {
   const text = String(msg.text || "").slice(0, MAX_CHARS);
-  if (fieldAbort) fieldAbort.abort();
-  fieldAbort = new AbortController();
+  const tab = sender && sender.tab ? sender.tab.id : "ext";
+  const key = tab + ":" + ((sender && sender.frameId) || 0) + ":" + msg.field;
+  const prev = fieldAborts.get(key);
+  if (prev) prev.abort();
+  const abort = new AbortController();
+  fieldAborts.set(key, abort);
   const result = { ok: false, matches: [] };
   try {
     const res = await fetch(ENGINE + "/v2/check", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ text, language: "en-US" }).toString(),
-      signal: fieldAbort.signal
+      signal: abort.signal
     });
     if (!res.ok) throw new Error("check HTTP " + res.status);
     const data = await res.json();
@@ -59,6 +78,7 @@ async function checkField(msg) {
   } catch (e) {
     result.error = String((e && e.message) || e);
   }
+  if (fieldAborts.get(key) === abort) fieldAborts.delete(key);
   // Battery evidence channel (test rig only; silent when nothing listens).
   try {
     await fetch("http://127.0.0.1:8082/capture", {
@@ -116,20 +136,25 @@ chrome.runtime.onInstalled.addListener(() => {
   // Chrome treats that as a first-time install (onInstalled), not a startup.
   // Learned the hard way: engine-status captured while battery-hello (then in
   // onStartup) never fired.
+  // Only the dict battery's capture server answers "dict": every other
+  // battery also runs a capture server, and its run must not get a popup
+  // driver tab adding/removing words (dict changes re-check live fields).
   fetch("http://127.0.0.1:8082/capture", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ kind: "battery-hello" })
-  }).then(() => chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?battery=1") }))
+  }).then((r) => r.text())
+    .then((t) => { if (t === "dict") chrome.tabs.create({ url: chrome.runtime.getURL("popup.html?battery=1") }); })
     .catch(() => {});
 });
 chrome.runtime.onStartup.addListener(() => { checkEngine(); });
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {  if (msg && msg.type === "check") {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg && msg.type === "check") {
     checkEngine().then(sendResponse);
     return true; // async response
   }
   if (msg && msg.type === "field-check") {
-    checkField(msg).then(sendResponse);
+    checkField(msg, sender).then(sendResponse);
     return true;
   }
   if (msg && msg.type === "battery-evidence") {
@@ -149,13 +174,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {  if (msg 
     if (!k) { sendResponse({ ok: false, error: "empty word" }); return true; }
     getDict()
       .then((d) => { d[k] = { addedAt: new Date().toISOString() }; return setDict(d); })
-      .then((d) => sendResponse({ ok: true, dict: d }));
+      .then((d) => { notifyDictChanged(); sendResponse({ ok: true, dict: d }); });
     return true;
   }
   if (msg && msg.type === "dict-remove") {
     getDict()
       .then((d) => { delete d[dictKey(msg.word)]; return setDict(d); })
-      .then((d) => sendResponse({ ok: true, dict: d }));
+      .then((d) => { notifyDictChanged(); sendResponse({ ok: true, dict: d }); });
     return true;
   }
 });
