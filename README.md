@@ -62,11 +62,17 @@ Command-line equivalent: `sh scripts/launcher.sh start` (also `status`, `stop`, 
 1. Open `chrome://extensions`, toggle **Developer mode** on (top right).
 2. Click **Load unpacked** and select the `extension/` folder of this repo.
 3. The extension appears as **Local Writing Assistant**. Its ID will be
-   `72d179dc6d1fd4b1f90a7c463f8d706e` — that exact value, on every machine, because the
-   signing key is pinned inside `extension/manifest.json` (`"key"` field). If you see a
-   different ID, something else got loaded.
+   `hcnbhjnmgnbpnelbpjakhmegdpinhago` — that exact value, on every machine, because the
+   signing key is pinned inside `extension/manifest.json` (`"key"` field). (Chrome
+   displays IDs in a letters-only a-p alphabet; the same value in hex is
+   `72d179dc6d1fd4b1f90a7c463f8d706e`.) If the first six letters aren't `hcnbhj`,
+   something else got loaded.
 
 ### 6. First-run checklist (2 minutes, do all four)
+
+**One gotcha:** pages that were already open before you loaded the extension don't
+have it — content scripts attach when a page loads. Reload any open tab (⌘R) once
+after loading, and after every extension reload.
 
 | Check | Do | Expect |
 |---|---|---|
