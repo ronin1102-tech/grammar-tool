@@ -212,6 +212,7 @@ One user, one machine, one engine. No cloud, no account, no telemetry — verifi
 ## 3.3 Chrome extension (MV3 thin client)
 
 - **Manifest:** MV3; `host_permissions: ["http://localhost:8081/*","http://127.0.0.1:8081/*"]` and nothing else — the allowlist is the telemetry firewall; no CSP key needed (§1.5); no remote code.
+  - **Battery entry (J12, wording pending Tracy's approval):** the shipped manifest also lists `http://127.0.0.1:8082/*` — the test rig's evidence-capture channel. It is loopback-only and nothing listens there in daily use (only `scripts/*-battery.sh` start a capture server), so the extension can reach no host beyond this machine; every battery needs it to observe the production code paths. The firewall claim therefore reads: engine on 8081, battery evidence on 8082, both loopback, nothing else.
 - **Extraction (per-surface modules):**
   - Generic forms: focus-driven; observes `input`/`keyup` on textarea, input\[text\], contenteditable; skips `type=password` and `autocomplete=cc-*` fields — **never sends secrets to the engine**.
   - Gmail: compose `div[role="textbox"][aria-label*="Message"]`.

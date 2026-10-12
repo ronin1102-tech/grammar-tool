@@ -24,14 +24,21 @@
 
 **overlay.js** (same content_scripts entry as content.js — shared isolated world):
 - `window.__LWA_OVERLAY.render({el, field, text, matches})` — called by content.js with each
-  field-check response. Renders underlines, stores `current`, publishes `data-lwa-rects`,
-  emits `{kind:"overlay", field, count, rects[]}` evidence.
+  field-check response. Renders underlines, stores that field's state, publishes
+  `data-lwa-rects`, emits `{kind:"overlay", field, count, rects[]}` evidence.
+- **State is per field** (J12 S2-2): a `Map` of `el → {field, matches, checkedText, rects}`,
+  each field drawing into its own group in the shared layer. Underlines persist per field
+  until THAT field changes; checking or applying in field B never touches field A.
+  `clearFor(el)`, click hit-testing, and re-render all key off the map.
 - Document-level click (capture): if the click lands in a stored match rect (±2–3px), apply:
   - plain fields: `setRangeText(rep, offset, offset+length)` (+ fallback string splice)
   - contenteditable: select the match Range → `execCommand("insertText", rep)` (undo-preserving)
   - both dispatch `input` → automatic re-check (and thus overlay refresh)
   - emits `{kind:"apply", field, from, to}` evidence
-- Re-render on scroll (fixed-position underlays go stale on scroll otherwise).
+- Re-render on scroll/resize, rAF-throttled (J12 S3-3), and on tracked fields' size changes
+  (`ResizeObserver`). A field that is hidden (0×0 — itself or an ancestor `display:none` —
+  or `visibility:hidden`) drops its bars and bridge but keeps its state; when it shows
+  again, the underlines come back (J12 S2-3).
 - Known v1 limitation (accepted): match offsets can go stale if the user types between check
   and click; the fast re-check loop is the mitigation. Real Gmail-surface verification = J8.
 - Readiness handshake: content side fires `lwaReady` on document once listeners are attached;
@@ -48,6 +55,8 @@
 | O3 | click at rect[0] on textarea applies `replacements[0]` and auto-re-checks | driver `publicAfter` startsWith "There was"; `apply` capture; later `field-check` sample startsWith "There was" |
 | O4 | same on contenteditable ("exmaple" → "example") | driver `richAfter` contains "example"; `apply` capture |
 | O5 | privacy guards still hold (regression): password value never appears | no `hunter2-secret`/field `pw` anywhere in captures |
+| O6 | two fields underlined at once (J12 S2-2) | driver counts bars DRAWN over each field (leaf divs of `#lwa-overlay-layer`) — not just the bridge, which pre-J12 went stale |
+| O7 | apply in one field leaves the other's underlines intact (J12 S2-2) | public's bridge byte-identical and bar count unchanged across the rich-field apply |
 
 **Honest untested:** undo-stack preservation after `execCommand` apply (manual check in J8
 Gmail pass); mirror fidelity under page zoom; overlay behavior in cross-origin iframes

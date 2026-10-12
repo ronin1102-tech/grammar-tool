@@ -1,5 +1,6 @@
-// LWA overlay — underlines + one-click apply (J7).
+// LWA overlay — underlines + one-click apply (J7; per-field state J12).
 // Contract: docs/extension-overlay.md
+//  - state is per field: each checked field owns its bars until it changes
 //  - plain fields: mirror-div measurement → fixed underlay bars
 //  - contenteditable: Range + CSS Custom Highlight API fallback-free variant
 //    (we draw our own bars from getClientRects — same math both ways)
@@ -15,7 +16,10 @@
   const TOLERANCE = 3; // px hit-test slack
 
   let layer = null;
-  let current = null; // { el, field, matches, checkedText, rects: [{x,y,w,h,mi}] }
+  // Per-field state (QA J12 S2-2): every checked field keeps its own underlines
+  // until THAT field changes — checking field B never wipes field A.
+  // el -> { field, matches, checkedText, rects: [{x,y,w,h,mi}], group, hidden }
+  const states = new Map();
 
   function cat(m) {
     const id = (m.rule && m.rule.category && m.rule.category.id) || "";
@@ -40,10 +44,6 @@
       "position:fixed;inset:0;pointer-events:none;z-index:" + LAYER_Z + ";";
     (document.body || document.documentElement).appendChild(layer);
     return layer;
-  }
-
-  function clearLayer() {
-    if (layer) layer.textContent = "";
   }
 
   function styleFor(m) {
@@ -157,49 +157,94 @@
   }
 
   // ---- render / clear ------------------------------------------------------
+  function isPlain(el) { return el.tagName === "TEXTAREA" || el.tagName === "INPUT"; }
+  function liveText(el) { return (isPlain(el) ? el.value : el.textContent) || ""; }
+
+  // Hidden = takes no space or is visibility:hidden (e.g. Gmail's minimized
+  // compose keeps the dialog in the DOM — removal observers never fire).
+  function isHidden(el) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0 || el.getClientRects().length === 0) return true;
+    return getComputedStyle(el).visibility === "hidden";
+  }
+
+  function measure(el, text, matches) {
+    return isPlain(el) ? measurePlain(el, text, matches) : measureRich(el, text, matches);
+  }
+
+  // Draw st.rects into the field's own group and publish the DOM bridge.
+  function draw(el, st) {
+    if (!st.group || !document.contains(st.group)) {
+      st.group = document.createElement("div");
+      ensureLayer().appendChild(st.group);
+    }
+    st.group.textContent = "";
+    st.rects.forEach(function (r) {
+      const bar = document.createElement("div");
+      bar.style.cssText = styleFor(st.matches[r.mi]) +
+        "left:" + r.x + "px;top:" + r.y + "px;width:" + r.w + "px;height:" + Math.max(4, r.h) + "px;";
+      st.group.appendChild(bar);
+    });
+    try {
+      el.dataset.lwaRects = JSON.stringify(st.rects.map(function (r) {
+        return [Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h), r.mi];
+      }));
+    } catch (_) {}
+  }
+
+  // Hide without forgetting: a minimized compose restored later gets its
+  // underlines back on the next refresh (the field didn't change).
+  function hide(el, st) {
+    st.hidden = true;
+    st.rects = [];
+    if (st.group) st.group.textContent = "";
+    delete el.dataset.lwaRects;
+  }
+
   function render(req) {
     const el = req.el;
     if (!el || !document.contains(el)) return;
-    if (current && current.layer && current.layer.parentNode) current.layer.parentNode.removeChild(current.layer);
-    clearLayer();
-    current = null;
-    delete el.dataset.lwaRects;
+    clearFor(el);
     if (!req.matches || !req.matches.length) {
       sendEvidence({ kind: "overlay", field: req.field, count: 0, rects: [] });
       return;
     }
-    const text = req.text;
-    const rects = el.tagName === "TEXTAREA" || el.tagName === "INPUT"
-      ? measurePlain(el, text, req.matches)
-      : measureRich(el, text, req.matches);
-    const L = ensureLayer();
-    rects.forEach(function (r) {
-      const bar = document.createElement("div");
-      bar.style.cssText = styleFor(req.matches[r.mi]) +
-        "left:" + r.x + "px;top:" + r.y + "px;width:" + r.w + "px;height:" + Math.max(4, r.h) + "px;";
-      L.appendChild(bar);
-    });
-    current = { el: el, field: req.field, matches: req.matches, checkedText: text, rects: rects };
-    try {
-      el.dataset.lwaRects = JSON.stringify(rects.map(function (r) {
-        return [Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h), r.mi];
-      }));
-    } catch (_) {}
+    const st = { field: req.field, matches: req.matches, checkedText: req.text, rects: [], group: null, hidden: false };
+    states.set(el, st);
+    watch(el);
+    if (isHidden(el)) {
+      hide(el, st);
+    } else {
+      st.rects = measure(el, req.text, req.matches);
+      draw(el, st);
+    }
     sendEvidence({
-      kind: "overlay", field: req.field, count: rects.length,
-      rects: rects.map(function (r) { return [Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]; })
+      kind: "overlay", field: req.field, count: st.rects.length,
+      rects: st.rects.map(function (r) { return [Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h)]; })
     });
   }
 
+  function clearFor(el) {
+    if (el && el.dataset) delete el.dataset.lwaRects;
+    const st = states.get(el);
+    if (!st) return;
+    if (st.group && st.group.parentNode) st.group.parentNode.removeChild(st.group);
+    states.delete(el);
+    unwatch(el);
+  }
+
   // ---- apply ---------------------------------------------------------------
-  function findMi(x, y) {
-    if (!current) return -1;
-    for (let i = 0; i < current.rects.length; i++) {
-      const r = current.rects[i];
-      if (x >= r.x - TOLERANCE && x <= r.x + r.w + TOLERANCE &&
-          y >= r.y - TOLERANCE && y <= r.y + r.h + TOLERANCE) return r.mi;
-    }
-    return -1;
+  function findHit(x, y) {
+    let hit = null;
+    states.forEach(function (st, el) {
+      if (hit || st.hidden) return;
+      for (let i = 0; i < st.rects.length; i++) {
+        const r = st.rects[i];
+        if (x >= r.x - TOLERANCE && x <= r.x + r.w + TOLERANCE &&
+            y >= r.y - TOLERANCE && y <= r.y + r.h + TOLERANCE) { hit = { el: el, st: st, mi: r.mi }; return; }
+      }
+    });
+    return hit;
   }
 
   function originalSubstring(m) {
@@ -210,10 +255,10 @@
     return null;
   }
 
-  function locate(text, m) {
+  function locate(text, m, checkedText) {
     // exact offsets first; on staleness, search the original substring nearby
     const orig = originalSubstring(m);
-    if (text === current.checkedText) return { start: m.offset, end: m.offset + m.length };
+    if (text === checkedText) return { start: m.offset, end: m.offset + m.length };
     if (orig) {
       const from = Math.max(0, m.offset - 200);
       const idx = text.indexOf(orig, from);
@@ -223,18 +268,18 @@
   }
 
   function applyAt(x, y) {
-    const mi = findMi(x, y);
-    if (mi < 0) return false;
-    const m = current.matches[mi];
+    const hit = findHit(x, y);
+    if (!hit) return false;
+    const el = hit.el, st = hit.st;
+    const m = st.matches[hit.mi];
     const rep = m.replacements && m.replacements[0] && m.replacements[0].value;
     if (!rep) return false;
-    const el = current.el;
-    const text = el.tagName === "TEXTAREA" || el.tagName === "INPUT" ? el.value : el.textContent;
-    const loc = locate(text || "", m);
+    const text = liveText(el);
+    const loc = locate(text, m, st.checkedText);
     if (!loc) return false;
-    const from = (text || "").substr(loc.start, loc.end - loc.start);
+    const from = text.substr(loc.start, loc.end - loc.start);
 
-    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+    if (isPlain(el)) {
       el.focus();
       if (el.setRangeText) el.setRangeText(rep, loc.start, loc.end, "end");
       else el.value = el.value.slice(0, loc.start) + rep + el.value.slice(loc.end);
@@ -249,50 +294,45 @@
       sel.removeAllRanges(); sel.addRange(r);
       document.execCommand("insertText", false, rep); // fires input natively
     }
-    sendEvidence({ kind: "apply", field: current.field, from: from.slice(0, 60), to: rep.slice(0, 60) });
+    sendEvidence({ kind: "apply", field: st.field, from: from.slice(0, 60), to: rep.slice(0, 60) });
     clearFor(el);
     return true;
   }
 
-  function clearFor(el) {
-    if (current && current.el === el) {
-      clearLayer();
-      delete el.dataset.lwaRects;
-      current = null;
-    }
-  }
-
   // ---- events --------------------------------------------------------------
   document.addEventListener("click", function (e) {
-    if (!current) return;
+    if (!states.size) return;
     applyAt(e.clientX, e.clientY);
   }, true);
 
-  function rerenderOnScroll() {
-    if (!current || !current.matches || !current.matches.length) return;
-    const el = current.el;
-    if (!document.contains(el)) return;
-    const text = el.tagName === "TEXTAREA" || el.tagName === "INPUT" ? el.value : el.textContent;
-    const rects = el.tagName === "TEXTAREA" || el.tagName === "INPUT"
-      ? measurePlain(el, text || "", current.matches)
-      : measureRich(el, text || "", current.matches);
-    current.rects = rects;
-    clearLayer();
-    const L = ensureLayer();
-    rects.forEach(function (r) {
-      const bar = document.createElement("div");
-      bar.style.cssText = styleFor(current.matches[r.mi]) +
-        "left:" + r.x + "px;top:" + r.y + "px;width:" + r.w + "px;height:" + Math.max(4, r.h) + "px;";
-      L.appendChild(bar);
+  // Re-measure every tracked field: fixed-position bars go stale on scroll,
+  // resize, and layout changes. Hidden fields drop their bars (kept state).
+  function refreshAll() {
+    states.forEach(function (st, el) {
+      if (!document.contains(el)) { clearFor(el); return; }
+      if (isHidden(el)) { if (!st.hidden || st.rects.length) hide(el, st); return; }
+      st.hidden = false;
+      st.rects = measure(el, liveText(el), st.matches);
+      draw(el, st);
     });
-    try {
-      el.dataset.lwaRects = JSON.stringify(rects.map(function (r) {
-        return [Math.round(r.x), Math.round(r.y), Math.round(r.w), Math.round(r.h), r.mi];
-      }));
-    } catch (_) {}
   }
-  document.addEventListener("scroll", rerenderOnScroll, true);
-  window.addEventListener("resize", rerenderOnScroll);
+
+  // rAF-throttled (QA J12 S3-3): a scroll burst costs one measurement per frame.
+  let pending = false;
+  function scheduleRefresh() {
+    if (pending || !states.size) return;
+    pending = true;
+    requestAnimationFrame(function () { pending = false; refreshAll(); });
+  }
+  document.addEventListener("scroll", scheduleRefresh, true);
+  window.addEventListener("resize", scheduleRefresh);
+
+  // Size changes of a tracked field — including collapsing to 0x0 when it or
+  // an ancestor goes display:none (Gmail minimize, QA J12 S2-3) — refresh
+  // without needing a scroll event.
+  const sizeWatch = typeof ResizeObserver === "function" ? new ResizeObserver(scheduleRefresh) : null;
+  function watch(el) { if (sizeWatch) sizeWatch.observe(el); }
+  function unwatch(el) { if (sizeWatch) sizeWatch.unobserve(el); }
 
   window.__LWA_OVERLAY = { render: render, clearFor: clearFor, applyAt: applyAt };
   // NOTE: the lwaReady handshake is dispatched by content.js (loaded AFTER this

@@ -14,8 +14,9 @@
   <script>
     // Battery driver v3: types a two-paragraph body, waits for the overlay via
     // the dataset bridge, clicks matches[0], verifies auto re-check, then runs
-    // the UNDO PROOF (does the correction sit on the page's native undo stack?)
-    // and finally removes the dialog (lifecycle: overlay must clear).
+    // the UNDO PROOF (does the correction sit on the page's native undo stack?),
+    // minimizes + restores the dialog (J12), and finally removes it
+    // (lifecycle: overlay must clear).
     if (location.search.indexOf("battery=1") !== -1) {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       (async () => {
@@ -62,8 +63,24 @@
           afterUndo = body.textContent;
           const undoRestores = (afterUndo === before);
 
-          // LIFECYCLE: close the compose dialog -> overlay must clear.
+          // LIFECYCLE (J12 S2-3): MINIMIZE keeps the dialog in the DOM — hide
+          // it with NO scroll event; the overlay must clear anyway, and come
+          // back when the dialog is restored (the text didn't change).
+          await sleep(1600); // let undo's own re-check land first (run-1 lesson)
           const dlg = document.querySelector('[role="dialog"]');
+          const rectsBeforeMinimize = JSON.parse(body.dataset.lwaRects || "[]").length;
+          dlg.style.display = "none";
+          await sleep(400);
+          const clearedAfterMinimize = (body.dataset.lwaRects === undefined);
+          dlg.style.display = "";
+          let rectsAfterRestore = 0;
+          for (let i = 0; i < 8; i++) {
+            await sleep(100);
+            rectsAfterRestore = JSON.parse(body.dataset.lwaRects || "[]").length;
+            if (rectsAfterRestore) break;
+          }
+
+          // LIFECYCLE: close the compose dialog -> overlay must clear.
           const rectsBeforeClose = body.dataset.lwaRects || "[]";
           if (dlg) dlg.remove();
           await sleep(400);
@@ -85,6 +102,9 @@
               afterApply: afterApply,
               afterUndo: afterUndo,
               undoRestores: undoRestores,
+              rectsBeforeMinimize: rectsBeforeMinimize,
+              clearedAfterMinimize: clearedAfterMinimize,
+              rectsAfterRestore: rectsAfterRestore,
               rectsBeforeClose: rectsBeforeClose.length,
               clearedAfterClose: clearedAfterClose
             })

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>LWA dict fixture</title></head>
+<body style="font:14px sans-serif">
+  <h1>LWA dict fixture</h1>
+  <p>Live-overlay dictionary check (J12 S2-4): one field, typed ONCE. The popup
+     driver adds then removes the dictionary word; the underline must go and
+     come back with zero further typing.</p>
+  <textarea id="live" rows="3" cols="60"></textarea>
+  <script>
+    if (location.search.indexOf("battery=1") !== -1) {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const count = (el) => JSON.parse(el.dataset.lwaRects || "[]").length;
+      // Poll the DOM bridge until pred(count) holds or the budget runs out.
+      const waitFor = async (el, pred, ms) => {
+        for (let t = 0; t < ms; t += 200) { if (pred(count(el))) return true; await sleep(200); }
+        return pred(count(el));
+      };
+      (async () => {
+        try {
+          await Promise.race([
+            new Promise((res) => document.addEventListener("lwaReady", res, { once: true })),
+            sleep(10000)
+          ]);
+          const el = document.getElementById("live");
+          el.focus();
+          el.value = "Tell sam and Xkalt about the mistkae.";
+          el.dispatchEvent(new Event("input", { bubbles: true })); // the ONLY input event
+          await waitFor(el, (n) => n >= 3, 10000);
+          const before = count(el);
+          await waitFor(el, (n) => n === before - 1, 20000);  // popup adds "Sam"
+          const afterAdd = count(el);
+          await waitFor(el, (n) => n === before, 20000);      // popup removes "Sam"
+          const afterRemove = count(el);
+          await fetch("/driver-report", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ before: before, afterAdd: afterAdd, afterRemove: afterRemove, inputEvents: 1 })
+          }).catch(function () {});
+        } catch (err) {
+          await fetch("/driver-report", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ driverError: String(err && err.stack || err) })
+          }).catch(function () {});
+        }
+        await fetch("/battery-done").catch(function () {});
+      })();
+    }
+  </script>
+</body>
+</html>

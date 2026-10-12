@@ -9,6 +9,8 @@
 # LWA_CHOICE=...  answers the "already running" dialog in headless mode
 #                 (stop | restart | ok)
 # LWA_JAVA=...    override the java binary (test hook)
+# LWA_PREFLIGHT_ONLY=1  run the start-path file/JDK checks, then exit 0
+#                 without spawning the engine (test hook, launcher-battery.sh)
 #
 # Deliberately NO `set -e`: readiness polls and teardown probes fail on
 # purpose during normal operation; every failure path is handled explicitly.
@@ -42,19 +44,42 @@ fail() { # $1=message — error path: dialog in GUI, line + exit 1 in headless
   exit 1
 }
 
+# JRS probe (v1 spec §3.2): an unpatched Temurin JDK still carries
+# JavaRuntimeSupport load commands in lib/*.dylib, which don't resolve on
+# Catalina (the framework doesn't exist there; where it does, refs resolve
+# and nothing needs patching). Needs otool (CommandLineTools — also what
+# patch-jdk.sh needs); without CLT we skip the probe rather than trigger
+# Apple's install prompt, and the died-during-startup path below still
+# names patch-jdk.sh.
+jdk_unpatched() {
+  [ -e /System/Library/Frameworks/JavaRuntimeSupport.framework ] && return 1
+  xcode-select -p >/dev/null 2>&1 || return 1
+  LIBDIR="$(dirname "$JAVA")/../lib"
+  for f in "$LIBDIR"/*.dylib; do
+    [ -f "$f" ] || continue
+    otool -L "$f" 2>/dev/null | grep -q JavaRuntimeSupport && return 0
+  done
+  return 1
+}
+
 is_up()      { [ "$(curl -s -o /dev/null -w "%{http_code}" --max-time 2 "$URL/v2/languages" 2>/dev/null || echo 000)" = "200" ]; }
 port_owner() { lsof -ti tcp:"$PORT" -sTCP:LISTEN 2>/dev/null; }
 engine_pid() { p=$(cat "$PIDFILE" 2>/dev/null); [ -n "$p" ] && kill -0 "$p" 2>/dev/null && echo "$p"; }
 
 start() {
   if is_up; then say "Engine is already running."; exit 0; fi
-  [ -x "$JAVA" ] || fail "Java not found at $JAVA — run scripts/fetch-engine.sh first."
+  [ -x "$JAVA" ] || fail "Java not found at $JAVA — run scripts/fetch-engine.sh first (it downloads the JDK and patches it with scripts/patch-jdk.sh)."
+  jdk_unpatched && fail "The JDK at $JAVA is not patched for this macOS — run: sh scripts/patch-jdk.sh $(cd "$(dirname "$JAVA")/.." && pwd)"
   [ -f "$ENGINE_JAR" ] || fail "Engine not found — run scripts/fetch-engine.sh first."
   [ -f "$CONF" ] || fail "Missing engine/server.properties."
+  [ "$LWA_PREFLIGHT_ONLY" = "1" ] && { echo "LWA: preflight ok"; exit 0; }
   OWNER=$(port_owner)
   [ -n "$OWNER" ] && fail "Port $PORT is already in use by pid $OWNER (not ours). Quit it or change LWA_PORT."
 
   mkdir -p "$ROOT/data"
+  # Keep the log bounded for daily use: past 1 MB, the previous log moves to
+  # engine.log.1 (one generation kept) and this start begins a fresh file.
+  if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 1048576 ]; then mv -f "$LOG" "$LOG.1"; fi
   echo "=== $(date) — starting engine ===" >> "$LOG"
   nohup "$JAVA" -Djava.awt.headless=true -Xms256m -Xmx1g \
     -cp "$ENGINE_JAR" org.languagetool.server.HTTPServer \
@@ -81,8 +106,13 @@ start() {
       done
       if is_up; then say "Writing engine ready."; exit 0; fi
     fi
-    kill -0 "$PID" 2>/dev/null || fail "Engine process died during startup. Last log lines:
+    if ! kill -0 "$PID" 2>/dev/null; then
+      # dyld can't find JavaRuntimeSupport = unpatched JDK (probe skipped or missed).
+      tail -n 20 "$LOG" | grep -q JavaRuntimeSupport && \
+        fail "The JDK is not patched for this macOS (JavaRuntimeSupport missing) — run: sh scripts/patch-jdk.sh $(cd "$(dirname "$JAVA")/.." && pwd)"
+      fail "Engine process died during startup. Last log lines:
 $(tail -n 6 "$LOG" | cut -c1-160)"
+    fi
     sleep 1; i=$((i+1))
   done
   fail "Engine did not become ready in 240s. Check $LOG"

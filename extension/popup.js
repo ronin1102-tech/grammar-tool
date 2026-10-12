@@ -78,6 +78,14 @@ function send(msg) {
   });
 }
 
+// A null reply means the service worker never answered — say so instead of
+// silently doing nothing (QA J12 S3-7).
+function dictResult(r) {
+  const err = document.getElementById("dict-err");
+  err.textContent = r ? "" : "Couldn't reach the extension — try again, or reload it in chrome://extensions.";
+  return !!(r && r.ok);
+}
+
 function renderDict(dict) {
   const ul = document.getElementById("dictlist");
   ul.textContent = "";
@@ -88,7 +96,7 @@ function renderDict(dict) {
     span.className = "w"; span.textContent = w;
     const x = document.createElement("button");
     x.className = "x"; x.textContent = "✕"; x.title = "remove";
-    x.onclick = async () => { const r = await send({ type: "dict-remove", word: w }); if (r && r.ok) renderDict(r.dict); };
+    x.onclick = async () => { const r = await send({ type: "dict-remove", word: w }); if (dictResult(r)) renderDict(r.dict); };
     li.appendChild(span); li.appendChild(x);
     ul.appendChild(li);
   });
@@ -105,7 +113,7 @@ async function addWord() {
   const w = input.value;
   if (!w.trim()) return;
   const r = await send({ type: "dict-add", word: w });
-  if (r && r.ok) { input.value = ""; renderDict(r.dict); }
+  if (dictResult(r)) { input.value = ""; renderDict(r.dict); }
 }
 document.getElementById("dict-add").onclick = addWord;
 document.getElementById("dict-word").addEventListener("keydown", (e) => { if (e.key === "Enter") addWord(); });
@@ -147,6 +155,35 @@ if (location.search.indexOf("battery=1") !== -1) {
       await send({ type: "dict-remove", word: "Sam" });
       const afterRemove = await probe();
       await report({ phase: "after-remove", engineMatches: afterRemove.engineMatches, shownMatches: afterRemove.matches.length });
+
+      // Live overlay (J12 S2-4): a real page's underlines must follow dict
+      // changes with zero typing. The fixture types once; we watch its overlay
+      // evidence (content-script messages reach extension pages too), then
+      // add and remove "Sam" and wait for the overlay to follow each time.
+      const overlayCounts = [];
+      const waiters = [];
+      chrome.runtime.onMessage.addListener((m) => {
+        const d = m && m.type === "battery-evidence" && m.data;
+        if (!d || d.kind !== "overlay" || d.field !== "live") return;
+        overlayCounts.push(d.count);
+        waiters.slice().forEach((w) => w(d.count));
+      });
+      const overlayCount = (pred, ms) => new Promise((resolve) => {
+        if (overlayCounts.length && pred(overlayCounts[overlayCounts.length - 1])) return resolve(true);
+        const w = (n) => { if (pred(n)) { done(true); } };
+        const done = (ok) => { waiters.splice(waiters.indexOf(w), 1); clearTimeout(t); resolve(ok); };
+        const t = setTimeout(() => done(false), ms);
+        waiters.push(w);
+      });
+      chrome.tabs.create({ url: "http://127.0.0.1:8083/dict?battery=1", active: true });
+      const sawBase = await overlayCount((n) => n >= 3, 20000);
+      const liveBase = overlayCounts[overlayCounts.length - 1];
+      await send({ type: "dict-add", word: "Sam" });
+      const sawAdd = await overlayCount((n) => n === liveBase - 1, 10000);
+      await report({ phase: "live-added", sawBase, liveBase, sawAdd, counts: overlayCounts.slice() });
+      await send({ type: "dict-remove", word: "Sam" });
+      const sawRemove = await overlayCount((n) => n === liveBase, 10000);
+      await report({ phase: "live-removed", sawRemove, counts: overlayCounts.slice() });
     } catch (e) {
       await report({ phase: "driverError", error: String(e && e.stack || e) });
     }

@@ -17,11 +17,12 @@
   const lastChecked = new Map(); // element -> text at last check (no-op guard)
 
   function isSecret(el) {
+    // cc-* autocomplete guards ANY element, not just <input> (QA J12 S3-1).
+    const ac = (el.getAttribute("autocomplete") || "").toLowerCase();
+    if (ac.indexOf("cc-") === 0) return true;
     if (el.tagName !== "INPUT") return false;
     const t = (el.getAttribute("type") || "text").toLowerCase();
-    if (t === "password" || t === "email" || t === "tel" || t === "number") return true;
-    const ac = (el.getAttribute("autocomplete") || "").toLowerCase();
-    return ac.indexOf("cc-") === 0;
+    return t === "password" || t === "email" || t === "tel" || t === "number";
   }
 
   function isEditable(el) {
@@ -57,6 +58,9 @@
     if (!el || !document.contains(el) || isSecret(el)) return;
     const text = (textOf(el) || "").slice(0, MAX_CHARS);
     if (!text.trim()) {
+      // Clearing a field resets its check state: retyping the identical text
+      // must re-check, not hit the no-op guard (QA J12 S2-1).
+      lastChecked.delete(el);
       if (window.__LWA_OVERLAY) window.__LWA_OVERLAY.clearFor(el);
       return;
     }
@@ -67,7 +71,13 @@
         { type: "field-check", field: fieldId(el), tag: el.tagName.toLowerCase(), text: text },
         function (resp) {
           void chrome.runtime.lastError; // reply may never come; that's fine
-          if (!resp || !resp.ok || !document.contains(el)) return;
+          if (!resp || !resp.ok) {
+            // Failed/aborted check: forget it, so the same text can be checked
+            // again (engine down now, up later) instead of no-op'ing forever.
+            if (lastChecked.get(el) === text) lastChecked.delete(el);
+            return;
+          }
+          if (!document.contains(el)) return;
           if (window.__LWA_OVERLAY) {
             window.__LWA_OVERLAY.render({ el: el, field: fieldId(el), text: text, matches: resp.matches });
           }
@@ -80,6 +90,19 @@
     clearTimeout(timers.get(el));
     timers.set(el, setTimeout(function () { checkEl(el); }, DEBOUNCE_MS));
   }
+
+  // Dictionary changed (SW broadcast, QA J12 S2-4): re-check every field we've
+  // checked, so added words lose their underline — and removed words regain
+  // it — with zero typing.
+  try {
+    chrome.runtime.onMessage.addListener(function (msg) {
+      if (!msg || msg.type !== "dict-changed") return;
+      lastChecked.forEach(function (_text, el) {
+        lastChecked.delete(el);
+        if (document.contains(el)) scheduleFor(el);
+      });
+    });
+  } catch (_) { /* extension context gone */ }
 
   document.addEventListener("input", function (e) {
     // Input events carry their own target — no focus tracking to miss.

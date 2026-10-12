@@ -4,8 +4,8 @@
 #
 # Runs the fixture page (served on 127.0.0.1:8083) in isolated headed Chrome;
 # the in-page driver types into guarded and public fields; the SW's field-check
-# evidence lands on the 8082 capture channel. Asserts T1–T6 from
-# docs/extension-content-script.md.
+# evidence lands on the 8082 capture channel. Asserts T1–T8 from
+# docs/extension-content-script.md (T7/T8 = J12 S2-1 retype, S3-1 cc-* on any element).
 #
 # Preconditions handled here: engine started if down; fresh capture servers;
 # fresh Chrome profile (SingletonLock lesson). Evidence channel is smoke-tested
@@ -17,6 +17,7 @@ CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 SCRATCH="$ROOT/tests/fixtures"
 CAPDATA="/tmp/lwa-capture.jsonl"
 SENTINEL="/tmp/lwa-forms-done"
+REPORT="/tmp/lwa-driver-report.json"
 BLOG="/tmp/lwa-forms-chrome.log"
 
 # 0. Engine up (real operating condition).
@@ -48,7 +49,7 @@ rm -f "$CAPDATA"
 
 # 2. Fixture server (8083).
 lsof -ti tcp:8083 -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null || true; sleep 1
-rm -f "$SENTINEL"
+rm -f "$SENTINEL" "$REPORT"
 node "$SCRATCH/fixture-server.js" > /tmp/lwa-fixture-server.log 2>&1 &
 NODE2=$!
 sleep 1
@@ -58,7 +59,7 @@ PROFILE="/tmp/lwa-forms-profile-$$"
 rm -rf "$PROFILE"
 "$CHROME" --load-extension="$ROOT/extension" --user-data-dir="$PROFILE" \
   --no-first-run --no-default-browser-check --window-size=900,700 \
-  "http://127.0.0.1:8083/?battery=1" > "$BLOG" 2>&1 &
+  "http://127.0.0.1:8083/?battery=forms" > "$BLOG" 2>&1 &
 CPID=$!
 
 # 4. Wait for the sentinel (driver finished), then for evidence to land:
@@ -84,10 +85,16 @@ rm -rf "$PROFILE"
 [ -f "$SENTINEL" ] || { echo "FAIL: fixture driver never finished (see $BLOG)"; exit 1; }
 
 # 5. Assertions.
-python3 - "$CAPDATA" <<'EOF'
+python3 - "$CAPDATA" "$REPORT" <<'EOF'
 import json, sys, os
 
 path = sys.argv[1]
+rep = {}
+if os.path.exists(sys.argv[2]):
+    try: rep = json.load(open(sys.argv[2]))
+    except Exception: pass
+if rep.get("driverError"):
+    print("FAIL driver crashed: " + rep["driverError"][:300]); sys.exit(1)
 caps = []
 raw = open(path, "rb").read().decode("utf-8", "replace") if os.path.exists(path) else ""
 for line in raw.splitlines():
@@ -106,10 +113,15 @@ fields = [c.get("field") for c in caps if c.get("kind") == "field-check"]
 # T1/T2: secret guards — nothing from pw/cc, and the secret values appear nowhere.
 check("T1 password never sent", "pw" not in fields and "hunter2" not in raw)
 check("T2 cc-number never sent", "cc" not in fields and "4111" not in raw)
+# T8 (J12 S3-1): the cc-* guard applies to any element, not just <input>
+check("T8 cc-number textarea never sent", "cctext" not in fields and "4242" not in raw)
 
-pub = [c for c in caps if c.get("field") == "public"]
-rich = [c for c in caps if c.get("field") == "rich"]
-huge = [c for c in caps if c.get("field") == "huge"]
+# field-check captures only: since J7 the overlay also emits evidence under
+# the same field ids (kind "overlay", no textLength/sample).
+fcs = [c for c in caps if c.get("kind") == "field-check"]
+pub = [c for c in fcs if c.get("field") == "public"]
+rich = [c for c in fcs if c.get("field") == "rich"]
+huge = [c for c in fcs if c.get("field") == "huge"]
 
 # T3: public textarea checked with working matches.
 check("T3 textarea checked w/ matches",
@@ -132,6 +144,15 @@ check("T5 debounce collapses burst", len(p5) == 1 and len(p14) == 0,
 check("T6 char cap (12000 -> 10000)",
       bool(huge) and huge[-1].get("textLength") == 10000,
       "huge textLength=%s" % [c.get("textLength") for c in huge])
+
+# T7 (J12 S2-1): type, delete all, retype the IDENTICAL text -> the retype
+# is checked again (2 captures carrying that text) and underlines come back.
+rt = [c for c in caps if c.get("kind") == "field-check" and c.get("field") == "retype"
+      and c.get("sample") == rep.get("retypeText")]
+check("T7 delete-all + retype identical text re-checks",
+      len(rt) == 2 and rep.get("rectsFirst", 0) >= 1 and rep.get("rectsCleared") == 0
+      and rep.get("rectsRetyped", 0) >= 1,
+      "retype captures=%d report=%s" % (len(rt), {k: rep.get(k) for k in ("rectsFirst", "rectsCleared", "rectsRetyped")}))
 
 print("---")
 print("captures by field:", {f: fields.count(f) for f in set(fields)})
